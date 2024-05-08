@@ -29,16 +29,6 @@ Game :: struct {
 	dt:           f32,
 }
 
-/* Block :: struct {
-	x:       f32,
-	y:       f32,
-	leftX:   f32,
-	rightX:  f32,
-	bottomY: f32,
-	shape:   matrix[4, 2]i8,
-	type:    BlockType,
-} */
-
 Block :: struct {
 	pos:       v2, // x, y position of the block
 	shape:     matrix[4, 2]i8,
@@ -123,9 +113,6 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 		IS_READY = false
 	}
 
-	// Why 0 and 4?
-	// fmt.println(len(block.midPoints))
-
 	for &pos in block.midPoints {
 		rl.DrawCircleV(pos, 2, rl.YELLOW)
 	}
@@ -209,7 +196,7 @@ rotate_block :: proc(block: ^Block) {
 
 	// Change the shape of the block according to the rotation variable
 	block.shape = rotationMatrices[block.type][rotation]
-	// assign_min_max_of_shape(block)
+	block_add_mid_points(block)
 }
 
 create_random_block :: proc() -> Block {
@@ -239,67 +226,50 @@ create_random_block :: proc() -> Block {
 		shape = {0, 1, 0, 2, 0, 3, 0, 4}
 	}
 
-	/* rightX = x + 2 * CELL_SIZE
-	bottomY = y + 3 * CELL_SIZE
-
-	if t == .IBlock {
-		rightX = x + CELL_SIZE
-		bottomY = y + 5 * CELL_SIZE
-
-	} else if t == .OBlock {
-		bottomY = y + 2 * CELL_SIZE
-	} */
-
-	// assign_min_max_of_shape(&block)
 	return block
-}
-
-/* is_collided_with_ground :: proc(#no_alias game: ^Game) -> bool {
-	using game
-
-	if currentBlock.bottomY >= GRID_HEIGHT + GRID_OFFSET_Y {
-		score += 10
-		return true
-	}
-
-	return false
 }
 
 update :: proc(#no_alias game: ^Game) {
 	using rl, game
 
 	isTimeForNext: bool = false
-
-	if is_collided_with_ground(game) {
-		isTimeForNext = true
-		currentBlock = nextBlock
-	}
-
-	if isTimeForNext {
-		nextBlock = create_random_block()
-	}
-
 	movement: f32 = CELL_SIZE
 
-	if IsKeyDown(KeyboardKey.LEFT) && currentBlock.leftX > GRID_OFFSET_X {
-		currentBlock.x += -movement
-		currentBlock.rightX += -movement
-		currentBlock.leftX += -movement
+	if IsKeyDown(KeyboardKey.LEFT) {
+		if move_mid_points(game, 2) {
+			return
+		}
 
-	} else if (IsKeyDown(KeyboardKey.RIGHT) && currentBlock.rightX < GRID_WIDTH + GRID_OFFSET_X) {
-		currentBlock.x += movement
-		currentBlock.rightX += movement
-		currentBlock.leftX += movement
-
-	} else if (IsKeyDown(KeyboardKey.DOWN)) {
-		currentBlock.bottomY += movement
-		currentBlock.y += movement
+		currentBlock.pos.x += -movement
 	}
 
+	if IsKeyDown(KeyboardKey.RIGHT) {
+		if move_mid_points(game, 1) {
+			return
+		}
+
+		currentBlock.pos.x += movement
+	}
+
+	if IsKeyDown(KeyboardKey.DOWN) {
+		if move_mid_points(game, 0) {
+			nextBlock = create_random_block()
+			currentBlock = nextBlock
+			IS_READY = true
+			return
+		}
+		currentBlock.pos.y += movement
+	}
+
+	// FIXME: Do not let the player to rotate if the block is near edges
 	if IsKeyPressed(KeyboardKey.R) {
 		rotate_block(&currentBlock)
 	}
-} */
+}
+
+is_collided_with_game_board :: proc(game: ^Game) -> bool {
+	return false
+}
 
 main :: proc() {
 	rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "TETRIS IN ODIN!")
@@ -320,7 +290,7 @@ main :: proc() {
 		draw_game_board(&game)
 		draw_info(&game)
 
-		// update(&game)
+		update(&game)
 
 		rl.EndDrawing()
 	}
@@ -329,6 +299,12 @@ main :: proc() {
 }
 
 block_add_mid_points :: proc(block: ^Block) {
+
+	// meaning the midpoints should be reset
+	if len(block.midPoints) >= 16 {
+		clear_dynamic_array(&block.midPoints)
+	}
+
 	// find the middle points 
 	for i in 0 ..< 4 {
 		m1: v2 =  {
@@ -355,34 +331,49 @@ block_add_mid_points :: proc(block: ^Block) {
 	}
 }
 
-/* assign_min_max_of_shape :: proc(block: ^Block) {
-	// TODO: Maybe store the min and max values in each block
-	min, max: i8 = 2, -2
+move_mid_points :: proc(game: ^Game, op: i8) -> bool {
+	movement: f32 = CELL_SIZE
+	block := game.currentBlock
 
-	for v, i in intrinsics.matrix_flatten(block.shape) {
+	switch op {
+	case 0:
+		// move downwards
+		for &pos in block.midPoints {
+			if pos.y >= GRID_HEIGHT + GRID_OFFSET_Y {
+				return true
+			}
 
-		if i >= 4 {
-			break
+			pos.y += movement
 		}
 
-		if min > v {
-			min = v
+	case 1:
+		// move right
+		for &pos in block.midPoints {
+			if pos.x >= GRID_OFFSET_X + GRID_WIDTH {
+				return true
+			}
 		}
 
-		if max < v {
-			max = v
+		for &pos in block.midPoints {
+			pos.x += movement
+		}
+
+	case 2:
+		// move left
+		for &pos in block.midPoints {
+			if pos.x <= GRID_OFFSET_X {
+				return true
+			}
+		}
+
+		for &pos in block.midPoints {
+			pos.x += -movement
 		}
 	}
 
-	if max != 0 {
-		block.rightX = block.x + f32(max + 1) * CELL_SIZE
-	} else {
-		block.rightX = block.x + 1.0 * CELL_SIZE
+	if is_collided_with_game_board(game) {
+
 	}
 
-	if min != 0 {
-		block.leftX = block.x - CELL_SIZE
-	} else {
-		block.leftX = block.x
-	}
-} */
+	return false
+}
