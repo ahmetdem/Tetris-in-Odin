@@ -27,6 +27,7 @@ Game :: struct {
 	score:        i16,
 	currentBlock: Block,
 	nextBlock:    Block,
+	gameFinished: bool,
 }
 
 Block :: struct {
@@ -73,6 +74,7 @@ Color :: enum {
 	DARKBROWN,
 	MAGENTA,
 	RAYWHITE,
+	BLACK,
 }
 
 ColorMap: map[Color]rl.Color = {
@@ -93,8 +95,8 @@ ColorMap: map[Color]rl.Color = {
 	.DARKBROWN  = rl.DARKBROWN,
 	.MAGENTA    = rl.MAGENTA,
 	.RAYWHITE   = rl.RAYWHITE,
+	.BLACK      = rl.BLACK,
 }
-
 
 init_game_struct :: proc(#no_alias game: ^Game) {
 	using game
@@ -105,6 +107,7 @@ init_game_struct :: proc(#no_alias game: ^Game) {
 	}
 
 	score = 0
+	gameFinished = false
 
 	currentBlock = create_random_block()
 	nextBlock = create_random_block()
@@ -183,7 +186,7 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 	if fixed {
 		for i in 0 ..< 4 {
 			posV: v2 =  {
-				block.pos.x + f32(block.shape[i, 0]) * CELL_SIZE + 200,
+				block.pos.x + f32(block.shape[i, 0]) * CELL_SIZE + 300,
 				block.pos.y + f32(block.shape[i, 1]) * CELL_SIZE + 200,
 			}
 
@@ -271,7 +274,7 @@ create_random_block :: proc() -> Block {
 
 	t: BlockType = rand.choice_enum(BlockType)
 	type = t
-	color = rand.choice_enum(Color)
+	color = Color.BEIGE // rand.choice_enum(Color)
 
 	switch t {
 	case .LBlock:
@@ -320,7 +323,6 @@ update :: proc(#no_alias game: ^Game) {
 
 	if IsKeyDown(KeyboardKey.DOWN) {
 		if move_mid_points(game, Move.DOWN) {
-			// FIXME: Handle the next block being the same with the current one.
 			delete(currentBlock.midPoints)
 			set_indexes_by_block_pos(game)
 
@@ -349,6 +351,12 @@ update :: proc(#no_alias game: ^Game) {
 delete_complete_lines :: proc(game: ^Game) {
 	using game
 
+	for i := 0; i < 10; i += 1 {
+		if gameBoard[i] == 1 {
+			gameFinished = true
+		}
+	}
+
 	for row := 0; row < 20; row += 1 { 	// Loop through each row
 		isComplete: bool = true
 
@@ -373,6 +381,8 @@ delete_complete_lines :: proc(game: ^Game) {
 			for col := 0; col < 10; col += 1 {
 				gameBoard[col] = 0
 			}
+
+			score += 100
 
 			when ODIN_DEBUG {
 				fmt.printfln("Row %d is complete.", row)
@@ -422,6 +432,10 @@ main :: proc() {
 		draw_info(&game)
 
 		update(&game)
+
+		if gameFinished {
+			break
+		}
 
 		rl.EndDrawing()
 	}
