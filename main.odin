@@ -22,11 +22,10 @@ GRID_WIDTH :: GRID_HEIGHT / 2 // 350
 CELL_SIZE :: GRID_WIDTH / 10 // 35
 
 Game :: struct {
-	gameBoard:      [200]i8,
-	collidedBlocks: [dynamic]Block,
-	score:          i16,
-	currentBlock:   Block,
-	nextBlock:      Block,
+	gameBoard:    [200]i8,
+	score:        i16,
+	currentBlock: Block,
+	nextBlock:    Block,
 }
 
 Block :: struct {
@@ -79,10 +78,6 @@ draw_info :: proc(#no_alias game: ^Game) {
 	rl.DrawText(strings.clone_to_cstring(result), 430, 45, 30, rl.GRAY)
 
 	draw_block_types(&nextBlock, true)
-
-	for &block in collidedBlocks {
-		draw_block_types(&block)
-	}
 }
 
 draw_game_board :: proc(#no_alias game: ^Game) {
@@ -98,13 +93,25 @@ draw_game_board :: proc(#no_alias game: ^Game) {
 		rl.DrawLineV({GRID_OFFSET_X, y}, {GRID_OFFSET_Y + GRID_WIDTH, y}, rl.DARKGRAY)
 	}
 
+	for row in 0 ..< 20 {
+		for col in 0 ..< 10 {
+			if gameBoard[row * 10 + col] == 1 {
+				posV: v2 =  {
+					f32(col) * CELL_SIZE + GRID_OFFSET_X,
+					f32(row) * CELL_SIZE + GRID_OFFSET_Y,
+				}
+				draw_block(posV)
+			}
+		}
+	}
+
 	draw_block_types(&currentBlock)
 }
 
 draw_block :: proc(v: v2) {
 	lineThick: f32 = 2.0
 
-	// LSP'nin {CELL_SIZE, CELL_SIZE} ifadesini otomatik v2 algılaması.
+	// NOTE:LSP'nin {CELL_SIZE, CELL_SIZE} ifadesini otomatik v2 algılaması.
 	rl.DrawRectangleV(v, {CELL_SIZE, CELL_SIZE}, rl.LIGHTGRAY)
 
 	outer_rec: rl.Rectangle = {
@@ -144,10 +151,7 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 				block.pos.y + f32(block.shape[i, 1]) * CELL_SIZE,
 			}
 
-			denemeV: v2 = {block.pos.x, block.pos.y}
-
 			rl.DrawCircleV(posV, 2, rl.RED)
-			rl.DrawCircleV(denemeV, 2, rl.GREEN)
 			draw_block(posV)
 		}
 	}
@@ -220,7 +224,7 @@ create_random_block :: proc() -> Block {
 	pos.x = GRID_WIDTH / 2 + GRID_OFFSET_X
 	pos.y = 10
 
-	t: BlockType = rand.choice_enum(BlockType)
+	t: BlockType = BlockType.OBlock // rand.choice_enum(BlockType)
 	type = t
 
 	switch t {
@@ -271,7 +275,6 @@ update :: proc(#no_alias game: ^Game) {
 	if IsKeyDown(KeyboardKey.DOWN) {
 		if move_mid_points(game, Move.DOWN) {
 			// FIXME: Handle the next block being the same with the current one.
-			append(&collidedBlocks, currentBlock)
 			delete(currentBlock.midPoints)
 
 			set_indexes_by_block_pos(game)
@@ -280,6 +283,7 @@ update :: proc(#no_alias game: ^Game) {
 			nextBlock = create_random_block()
 			currentBlock = nextBlock
 
+			delete_complete_lines(game)
 			IS_READY = true
 			return
 		}
@@ -290,12 +294,41 @@ update :: proc(#no_alias game: ^Game) {
 	// FIXME: Do not let the player to rotate if the block is near edges
 	if IsKeyPressed(KeyboardKey.R) {
 		rotate_block(&currentBlock)
-		move_mid_points(game, Move.ROTATE)
+		check_collision(&currentBlock, &gameBoard, Move.ROTATE)
 	}
 }
 
-is_collided_with_game_board :: proc(game: ^Game) -> bool {
-	return false
+delete_complete_lines :: proc(game: ^Game) {
+	using game
+
+	for row := 0; row < 20; row += 1 { 	// Loop through each row
+		isComplete: bool = true
+
+		// Check if the current row is complete
+		for col := 0; col < 10; col += 1 {
+			if gameBoard[row * 10 + col] == 0 {
+				isComplete = false
+				break
+			}
+		}
+
+		// If the row is complete, remove it and move the rows above down
+		if isComplete {
+			// Move rows above down
+			for r := row; r > 0; r -= 1 {
+				for col := 0; col < 10; col += 1 {
+					gameBoard[r * 10 + col] = gameBoard[(r - 1) * 10 + col]
+				}
+			}
+
+			// Clear the top row
+			for col := 0; col < 10; col += 1 {
+				gameBoard[col] = 0
+			}
+
+			fmt.printfln("Row %d is complete.", row)
+		}
+	}
 }
 
 main :: proc() {
@@ -305,10 +338,9 @@ main :: proc() {
 	using game
 
 	init_game_struct(&game)
-	rl.DrawFPS(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, rl.WHITE)
+	rl.SetTargetFPS(30)
 
 	for !rl.WindowShouldClose() {
-		// update the game logic here 
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.BLACK)
@@ -321,6 +353,7 @@ main :: proc() {
 		rl.EndDrawing()
 	}
 
+	delete(currentBlock.midPoints)
 	rl.CloseWindow()
 }
 
@@ -363,7 +396,7 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 
 	down, right, left: bool = false, false, false
 
-	switch move {
+	#partial switch move {
 	case .DOWN:
 		// move downwards
 		for &pos, i in block.midPoints {
@@ -373,7 +406,7 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 				down = true
 			}
 
-			if check_collision(game, Move.DOWN) { 	// 10 for down
+			if check_collision(&game.currentBlock, &game.gameBoard, Move.DOWN) {
 				down = true
 			}
 
@@ -398,7 +431,7 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 				return true
 			}
 
-			if check_collision(game, Move.RIGHT) { 	// 1 for right
+			if check_collision(&game.currentBlock, &game.gameBoard, Move.RIGHT) {
 				return true
 			}
 		}
@@ -414,7 +447,7 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 				return true
 			}
 
-			if check_collision(game, Move.LEFT) { 	// -1 for left
+			if check_collision(&game.currentBlock, &game.gameBoard, Move.LEFT) {
 				return true
 			}
 		}
@@ -423,24 +456,21 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 			pos.x += -movement
 		}
 
-	// TODO: We need to move the mid points to in the case of rotation. THAT IS THE PROBLEM 
-	case .ROTATE:
+		return false
 	}
 
 	return false
 }
 
-check_collision :: proc(game: ^Game, move: Move) -> bool {
-	using game
-
+check_collision :: proc(block: ^Block, gameBoard: ^[200]i8, move: Move) -> bool {
 	meanX: f32 = 0.0
 	xIndex, yIndex: i16 = 0, 0
 
 	for i := 1; i < 16; i += 4 {
-		meanX = (currentBlock.midPoints[i + 1].x + currentBlock.midPoints[i].x) / 2
+		meanX = (block.midPoints[i + 1].x + block.midPoints[i].x) / 2
 
 		xIndex = i16(meanX / CELL_SIZE)
-		yIndex = i16(currentBlock.midPoints[i + 1].y / CELL_SIZE)
+		yIndex = i16(block.midPoints[i + 1].y / CELL_SIZE)
 
 		#partial switch move {
 		case .LEFT:
@@ -448,6 +478,12 @@ check_collision :: proc(game: ^Game, move: Move) -> bool {
 
 		case .RIGHT:
 			xIndex += 1
+
+		case .ROTATE:
+			if xIndex >= GRID_WIDTH / CELL_SIZE {
+				fmt.printfln("X_INDEX: %d --- Y_INDEX: %d", xIndex, yIndex)
+				return true
+			}
 		}
 
 		gameBoardIndex: i32 = i32(10 * yIndex + xIndex)
