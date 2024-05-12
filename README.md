@@ -8,7 +8,7 @@
 ## Usage
 Just install the [Odin Compiler](https://odin-lang.org/) and type:
 ```bash
-odin run .
+odin run ./src/
 ```
 
 The game should Compile and you are free to go and enjoy!
