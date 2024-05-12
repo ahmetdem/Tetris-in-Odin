@@ -11,6 +11,7 @@ import rl "vendor:raylib"
 v2 :: rl.Vector2
 
 IS_READY: bool = true
+BLOCK_FALL_TIME :: 1.0
 
 SCREEN_WIDTH :: 600
 SCREEN_HEIGHT :: 720
@@ -23,11 +24,13 @@ GRID_WIDTH :: GRID_HEIGHT / 2 // 350
 CELL_SIZE :: GRID_WIDTH / 10 // 35
 
 Game :: struct {
-	gameBoard:    [200]i8,
-	score:        i16,
-	currentBlock: Block,
-	nextBlock:    Block,
-	gameFinished: bool,
+	gameBoard:     [200]i8,
+	score:         i16,
+	currentBlock:  Block,
+	nextBlock:     Block,
+	gameOver:      bool,
+	moveSound:     rl.Sound,
+	completeSound: rl.Sound,
 }
 
 Block :: struct {
@@ -106,8 +109,8 @@ init_game_struct :: proc(#no_alias game: ^Game) {
 		gameBoard[i] = 0
 	}
 
-	score = 0
-	gameFinished = false
+	score = 100
+	gameOver = false
 
 	currentBlock = create_random_block()
 	nextBlock = create_random_block()
@@ -121,7 +124,9 @@ draw_info :: proc(#no_alias game: ^Game) {
 	cloned := strings.clone_to_cstring(result)
 
 	rl.DrawText("SCORE", 430, 10, 30, rl.GRAY)
-	rl.DrawText(cloned, 430, 45, 30, rl.GRAY)
+	rl.DrawText(cloned, 460, 45, 30, rl.GRAY)
+
+	rl.DrawText("Next", 450, 150, 30, rl.GRAY)
 
 	delete(cloned)
 	draw_block_types(&nextBlock, true)
@@ -179,18 +184,20 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 		IS_READY = false
 	}
 
-	for &pos in block.midPoints {
-		rl.DrawCircleV(pos, 2, rl.YELLOW)
+	when ODIN_DEBUG {
+		for &pos in block.midPoints {
+			rl.DrawCircleV(pos, 2, rl.YELLOW)
+		}
 	}
 
 	if fixed {
 		for i in 0 ..< 4 {
 			posV: v2 =  {
-				block.pos.x + f32(block.shape[i, 0]) * CELL_SIZE + 300,
-				block.pos.y + f32(block.shape[i, 1]) * CELL_SIZE + 200,
+				block.pos.x + f32(block.shape[i, 0]) * CELL_SIZE + GRID_WIDTH - 80,
+				block.pos.y + f32(block.shape[i, 1]) * CELL_SIZE + 180,
 			}
 
-			draw_block(posV, color)
+			draw_block(posV, rl.LIGHTGRAY)
 		}
 	} else {
 		for i in 0 ..< 4 {
@@ -199,7 +206,6 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 				block.pos.y + f32(block.shape[i, 1]) * CELL_SIZE,
 			}
 
-			rl.DrawCircleV(posV, 2, rl.RED)
 			draw_block(posV, color)
 		}
 	}
@@ -334,6 +340,8 @@ update :: proc(#no_alias game: ^Game) {
 			nextBlock = create_random_block()
 
 			delete_complete_lines(game)
+			rl.PlaySound(moveSound)
+
 			IS_READY = true
 			return
 		}
@@ -353,7 +361,7 @@ delete_complete_lines :: proc(game: ^Game) {
 
 	for i := 0; i < 10; i += 1 {
 		if gameBoard[i] == 1 {
-			gameFinished = true
+			gameOver = true
 		}
 	}
 
@@ -383,6 +391,7 @@ delete_complete_lines :: proc(game: ^Game) {
 			}
 
 			score += 100
+			rl.PlaySound(completeSound)
 
 			when ODIN_DEBUG {
 				fmt.printfln("Row %d is complete.", row)
@@ -416,31 +425,95 @@ main :: proc() {
 	}
 
 	rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "TETRIS IN ODIN!")
+	rl.InitAudioDevice()
+
+	mainMusic: rl.Music = rl.LoadMusicStream("./resources/Tetris.mp3")
+	over: bool = true
+
+	if rl.IsMusicReady(mainMusic) {
+		rl.PlayMusicStream(mainMusic)
+		rl.SetMusicVolume(mainMusic, 0.2)
+	}
 
 	game := Game{}
 	using game
+
+	gameOverSound: rl.Sound = rl.LoadSound("./resources/gameOver.wav")
+	completeSound = rl.LoadSound("./resources/complete.wav")
+	moveSound = rl.LoadSound("./resources/move.wav")
+
+	timer, dt: f32 = 0.0, 0.0
 
 	init_game_struct(&game)
 	rl.SetTargetFPS(30)
 
 	for !rl.WindowShouldClose() {
-
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.BLACK)
+		rl.PlayMusicStream(mainMusic)
 
-		draw_game_board(&game)
-		draw_info(&game)
+		if !gameOver {
+			rl.UpdateMusicStream(mainMusic)
 
-		update(&game)
+			dt = rl.GetFrameTime()
+			timer += dt
 
-		if gameFinished {
-			break
+			if timer >= BLOCK_FALL_TIME {
+				currentBlock.pos.y += CELL_SIZE
+				if move_mid_points(&game, Move.DOWN) {
+					delete(currentBlock.midPoints)
+					set_indexes_by_block_pos(&game)
+
+					currentBlock = nextBlock
+					nextBlock = create_random_block()
+
+					delete_complete_lines(&game)
+					rl.PlaySound(moveSound)
+					IS_READY = true
+				}
+
+				timer = 0
+			}
+
+			draw_game_board(&game)
+			draw_info(&game)
+
+			update(&game)
+
+		} else {
+
+			if over {
+				rl.PlaySound(gameOverSound)
+				over = false
+			}
+
+			rl.DrawText(
+				"GAME OVER",
+				SCREEN_WIDTH / 2 - rl.MeasureText("GAME OVER", 40) / 2,
+				SCREEN_HEIGHT / 2 - 40,
+				40,
+				rl.BEIGE,
+			)
+			rl.DrawText("Press Enter to restart", 290, 240, 20, rl.BEIGE)
+
+			rl.ClearBackground(rl.BLACK)
+
+			if rl.IsKeyPressed(rl.KeyboardKey.ENTER) {
+				init_game_struct(&game)
+				gameOver = false
+				over = true
+
+				rl.StopMusicStream(mainMusic)
+			}
 		}
 
 		rl.EndDrawing()
 	}
 
 	delete(currentBlock.midPoints)
+
+	rl.UnloadMusicStream(mainMusic)
+	rl.CloseAudioDevice()
 	rl.CloseWindow()
 }
 
