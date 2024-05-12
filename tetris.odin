@@ -101,6 +101,7 @@ ColorMap: map[Color]rl.Color = {
 	.BLACK      = rl.BLACK,
 }
 
+// Initilizes the Game State Structure
 init_game_struct :: proc(#no_alias game: ^Game) {
 	using game
 
@@ -116,6 +117,7 @@ init_game_struct :: proc(#no_alias game: ^Game) {
 	nextBlock = create_random_block()
 }
 
+// Draws Information like the Score, Texts and Next Block
 draw_info :: proc(#no_alias game: ^Game) {
 	using game
 
@@ -132,6 +134,7 @@ draw_info :: proc(#no_alias game: ^Game) {
 	draw_block_types(&nextBlock, true)
 }
 
+// Draws the Game Board and Current Block
 draw_game_board :: proc(#no_alias game: ^Game) {
 	using game
 
@@ -160,6 +163,7 @@ draw_game_board :: proc(#no_alias game: ^Game) {
 	draw_block_types(&currentBlock)
 }
 
+// General Function For Drawing Blocks
 draw_block :: proc(v: v2, color: rl.Color) {
 	lineThick: f32 = 2.0
 
@@ -176,6 +180,7 @@ draw_block :: proc(v: v2, color: rl.Color) {
 	rl.DrawRectangleLinesEx(outer_rec, lineThick, rl.GRAY)
 }
 
+// Draws The Whole Block Types using the draw_block()
 draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 	color: rl.Color = ColorMap[block.color]
 
@@ -211,13 +216,14 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 	}
 }
 
+// Rotates the Block 
 rotate_block :: proc(block: ^Block) {
 
 	@(static)
 	rotation: i8 = 0
 	rotation += 1
 
-	// NOTE: Sunumda burasını örnek type olarak gösterebilirsin (enumerated array).
+	// Sunum: Sunumda burasını örnek type olarak gösterebilirsin (enumerated array).
 	rotationMatrices: [BlockType][4]matrix[4, 2]i8 = {
 		.LBlock =  {
 			{0, 0, 0, 1, 0, 2, 1, 2},
@@ -263,7 +269,6 @@ rotate_block :: proc(block: ^Block) {
 		},
 	}
 
-	// TODO: Handle the big I block
 	rotation = rotation % 4
 
 	// Change the shape of the block according to the rotation variable
@@ -271,6 +276,7 @@ rotate_block :: proc(block: ^Block) {
 	add_mid_points_to_block(block)
 }
 
+// Creates a random Block And Returns It
 create_random_block :: proc() -> Block {
 	block: Block
 	using block
@@ -302,6 +308,7 @@ create_random_block :: proc() -> Block {
 	return block
 }
 
+// General Update loop for the game
 update :: proc(#no_alias game: ^Game) {
 	using rl, game
 
@@ -356,6 +363,7 @@ update :: proc(#no_alias game: ^Game) {
 	}
 }
 
+// Check for completed lines and if the game is over or not
 delete_complete_lines :: proc(game: ^Game) {
 	using game
 
@@ -400,6 +408,7 @@ delete_complete_lines :: proc(game: ^Game) {
 	}
 }
 
+// Main Function
 main :: proc() {
 	when ODIN_DEBUG { 	// Sunum: When keyword ve Free olmayan allocateleri göstermesi
 		track: mem.Tracking_Allocator
@@ -517,6 +526,7 @@ main :: proc() {
 	rl.CloseWindow()
 }
 
+// Add midpoints to the given block by calculating based on the shape 
 add_mid_points_to_block :: proc(block: ^Block) {
 
 	// Meaning the midpoints should be reset
@@ -550,6 +560,7 @@ add_mid_points_to_block :: proc(block: ^Block) {
 	}
 }
 
+// Move the midpoints Based on the Move and check for collision
 move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 	movement: f32 = CELL_SIZE
 	block: Block = game.currentBlock
@@ -615,13 +626,12 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 		for &pos in block.midPoints {
 			pos.x += -movement
 		}
-
-		return false
 	}
 
 	return false
 }
 
+// Check if the given block collides with the gameboard or not based on the move
 @(optimization_mode = "speed")
 check_collision :: proc(block: ^Block, gameBoard: ^[200]i8, move: Move) -> bool {
 	meanX: f32 = 0.0
@@ -662,6 +672,7 @@ check_collision :: proc(block: ^Block, gameBoard: ^[200]i8, move: Move) -> bool 
 	return false
 }
 
+// Fill the gameBoard based on where the current block is by calculating indexes
 set_indexes_by_block_pos :: proc(game: ^Game) {
 	using game
 
@@ -689,6 +700,7 @@ set_indexes_by_block_pos :: proc(game: ^Game) {
 	}
 }
 
+// Prints the gameBoard for Debugging purposes
 @(cold)
 print_game_board :: proc(game: ^Game) {
 	using game
@@ -704,6 +716,7 @@ print_game_board :: proc(game: ^Game) {
 	fmt.printf("\n\n")
 }
 
+// Prints the mid points for debugging purposes since everything is calculated by them
 @(cold)
 print_mid_points :: proc(block: ^Block) {
 	using block
