@@ -3,6 +3,7 @@ package main
 import "base:intrinsics"
 import "core:fmt"
 import "core:math/rand"
+import "core:mem"
 import "core:strconv"
 import "core:strings"
 import rl "vendor:raylib"
@@ -30,6 +31,7 @@ Game :: struct {
 
 Block :: struct {
 	pos:       v2, // x, y position of the block
+	color:     Color,
 	shape:     matrix[4, 2]i8,
 	type:      BlockType,
 	midPoints: [dynamic]v2,
@@ -53,6 +55,47 @@ Move :: enum u8 {
 	ROTATE,
 }
 
+Color :: enum {
+	YELLOW,
+	GOLD,
+	ORANGE,
+	PINK,
+	RED,
+	MAROON,
+	LIME,
+	DARKGREEN,
+	BLUE,
+	DARKBLUE,
+	PURPLE,
+	VIOLET,
+	DARKPURPLE,
+	BEIGE,
+	DARKBROWN,
+	MAGENTA,
+	RAYWHITE,
+}
+
+ColorMap: map[Color]rl.Color = {
+	.YELLOW     = rl.YELLOW,
+	.GOLD       = rl.GOLD,
+	.ORANGE     = rl.ORANGE,
+	.PINK       = rl.PINK,
+	.RED        = rl.RED,
+	.MAROON     = rl.MAROON,
+	.LIME       = rl.LIME,
+	.DARKGREEN  = rl.DARKGREEN,
+	.BLUE       = rl.BLUE,
+	.DARKBLUE   = rl.DARKBLUE,
+	.PURPLE     = rl.PURPLE,
+	.VIOLET     = rl.VIOLET,
+	.DARKPURPLE = rl.DARKPURPLE,
+	.BEIGE      = rl.BEIGE,
+	.DARKBROWN  = rl.DARKBROWN,
+	.MAGENTA    = rl.MAGENTA,
+	.RAYWHITE   = rl.RAYWHITE,
+}
+
+
 init_game_struct :: proc(#no_alias game: ^Game) {
 	using game
 
@@ -71,12 +114,13 @@ draw_info :: proc(#no_alias game: ^Game) {
 	using game
 
 	buf: [8]byte
-
 	result := strconv.itoa(buf[:], int(score))
+	cloned := strings.clone_to_cstring(result)
 
 	rl.DrawText("SCORE", 430, 10, 30, rl.GRAY)
-	rl.DrawText(strings.clone_to_cstring(result), 430, 45, 30, rl.GRAY)
+	rl.DrawText(cloned, 430, 45, 30, rl.GRAY)
 
+	delete(cloned)
 	draw_block_types(&nextBlock, true)
 }
 
@@ -100,7 +144,7 @@ draw_game_board :: proc(#no_alias game: ^Game) {
 					f32(col) * CELL_SIZE + GRID_OFFSET_X,
 					f32(row) * CELL_SIZE + GRID_OFFSET_Y,
 				}
-				draw_block(posV)
+				draw_block(posV, ColorMap[currentBlock.color])
 			}
 		}
 	}
@@ -108,11 +152,11 @@ draw_game_board :: proc(#no_alias game: ^Game) {
 	draw_block_types(&currentBlock)
 }
 
-draw_block :: proc(v: v2) {
+draw_block :: proc(v: v2, color: rl.Color) {
 	lineThick: f32 = 2.0
 
 	// NOTE:LSP'nin {CELL_SIZE, CELL_SIZE} ifadesini otomatik v2 algılaması.
-	rl.DrawRectangleV(v, {CELL_SIZE, CELL_SIZE}, rl.LIGHTGRAY)
+	rl.DrawRectangleV(v, {CELL_SIZE, CELL_SIZE}, color)
 
 	outer_rec: rl.Rectangle = {
 		x      = f32(v.x),
@@ -125,6 +169,7 @@ draw_block :: proc(v: v2) {
 }
 
 draw_block_types :: proc(block: ^Block, fixed: bool = false) {
+	color: rl.Color = ColorMap[block.color]
 
 	if IS_READY {
 		add_mid_points_to_block(block)
@@ -142,7 +187,7 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 				block.pos.y + f32(block.shape[i, 1]) * CELL_SIZE + 200,
 			}
 
-			draw_block(posV)
+			draw_block(posV, color)
 		}
 	} else {
 		for i in 0 ..< 4 {
@@ -152,7 +197,7 @@ draw_block_types :: proc(block: ^Block, fixed: bool = false) {
 			}
 
 			rl.DrawCircleV(posV, 2, rl.RED)
-			draw_block(posV)
+			draw_block(posV, color)
 		}
 	}
 }
@@ -224,8 +269,9 @@ create_random_block :: proc() -> Block {
 	pos.x = GRID_WIDTH / 2 + GRID_OFFSET_X
 	pos.y = 10
 
-	t: BlockType = BlockType.OBlock // rand.choice_enum(BlockType)
+	t: BlockType = rand.choice_enum(BlockType)
 	type = t
+	color = rand.choice_enum(Color)
 
 	switch t {
 	case .LBlock:
@@ -276,12 +322,14 @@ update :: proc(#no_alias game: ^Game) {
 		if move_mid_points(game, Move.DOWN) {
 			// FIXME: Handle the next block being the same with the current one.
 			delete(currentBlock.midPoints)
-
 			set_indexes_by_block_pos(game)
-			print_game_board(game)
 
-			nextBlock = create_random_block()
+			when ODIN_DEBUG {
+				print_game_board(game)
+			}
+
 			currentBlock = nextBlock
+			nextBlock = create_random_block()
 
 			delete_complete_lines(game)
 			IS_READY = true
@@ -326,12 +374,37 @@ delete_complete_lines :: proc(game: ^Game) {
 				gameBoard[col] = 0
 			}
 
-			fmt.printfln("Row %d is complete.", row)
+			when ODIN_DEBUG {
+				fmt.printfln("Row %d is complete.", row)
+			}
 		}
 	}
 }
 
 main :: proc() {
+	when ODIN_DEBUG { 	// Sunum: When keyword ve Free olmayan allocateleri göstermesi
+		track: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&track, context.allocator)
+		context.allocator = mem.tracking_allocator(&track)
+
+		defer {
+			if len(track.allocation_map) > 0 {
+				fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+				for _, entry in track.allocation_map {
+					fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+				}
+			}
+			if len(track.bad_free_array) > 0 {
+				fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+				for entry in track.bad_free_array {
+					fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+				}
+			}
+
+			mem.tracking_allocator_destroy(&track)
+		}
+	}
+
 	rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "TETRIS IN ODIN!")
 
 	game := Game{}
@@ -462,6 +535,7 @@ move_mid_points :: proc(game: ^Game, move: Move) -> bool {
 	return false
 }
 
+@(optimization_mode = "speed")
 check_collision :: proc(block: ^Block, gameBoard: ^[200]i8, move: Move) -> bool {
 	meanX: f32 = 0.0
 	xIndex, yIndex: i16 = 0, 0
@@ -481,7 +555,10 @@ check_collision :: proc(block: ^Block, gameBoard: ^[200]i8, move: Move) -> bool 
 
 		case .ROTATE:
 			if xIndex >= GRID_WIDTH / CELL_SIZE {
-				fmt.printfln("X_INDEX: %d --- Y_INDEX: %d", xIndex, yIndex)
+				when ODIN_DEBUG {
+					fmt.printfln("X_INDEX: %d --- Y_INDEX: %d", xIndex, yIndex)
+				}
+
 				return true
 			}
 		}
@@ -506,7 +583,9 @@ set_indexes_by_block_pos :: proc(game: ^Game) {
 	xIndex: i16 = 0
 	yIndex: i16 = 0
 
-	print_mid_points(&currentBlock)
+	when ODIN_DEBUG {
+		print_mid_points(&currentBlock)
+	}
 
 	for i := 1; i < 16; i += 4 { 	// 1, 5, 9, 13
 
@@ -523,6 +602,7 @@ set_indexes_by_block_pos :: proc(game: ^Game) {
 	}
 }
 
+@(cold)
 print_game_board :: proc(game: ^Game) {
 	using game
 
@@ -537,6 +617,7 @@ print_game_board :: proc(game: ^Game) {
 	fmt.printf("\n\n")
 }
 
+@(cold)
 print_mid_points :: proc(block: ^Block) {
 	using block
 
